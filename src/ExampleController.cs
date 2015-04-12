@@ -57,7 +57,8 @@ namespace Example.Controllers
         {
             //Here we call the mapper to get new mapped url
             //***********HERE IS THE CALLING EXAMPLE TO THE REVERSE URI MAPPER !!!
-            var parsedUrl = ReverseOdataUriMapper<CustomerIntView>.MapToOdataUri(options, this.createFieldMappingCust(), true, true, false);
+            var deleteCols = new List<string>() { "AddrName" };  //Columns we want to skip in the new url
+            var parsedUrl = ReverseOdataUriMapper<CustomerIntView>.MapToOdataUri(options, this.createFieldMappingCust(), deleteCols, true, true, false);
             if (string.IsNullOrWhiteSpace(parsedUrl))
             {
                 throw new Exception("Unable to parse query to external source");

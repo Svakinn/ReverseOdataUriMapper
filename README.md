@@ -24,9 +24,14 @@ Usage:
             var pairs = new List<FieldMapper>();
             pairs.Add(new FieldMapper("CustCode", "No"));
             pairs.Add(new FieldMapper("Email", "E_Mail"));
-2. Get the new mapped url  
+2. Define fields you want to ignore - skip nodes containing the column
 
-		var parsedUrl = ReverseOdataUriMapper<CustomerIntView>.MapToOdataUri(options, pairs, true, true, false);`	
+            var skips = new List<string>();
+            skips.Add("CountryName");
+            skips.Add("ZipName");
+3. Get the new mapped url  
+
+		var parsedUrl = ReverseOdataUriMapper<CustomerIntView>.MapToOdataUri(options, pairs, skips, true, true, false);
 
 Se example usage here:  
 [ExampleController.cs](/src/ExampleController.cs)

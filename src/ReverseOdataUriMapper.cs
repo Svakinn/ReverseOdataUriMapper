@@ -36,8 +36,17 @@ namespace WebApiBase
         /// <returns></returns>
         private static string ReplaceName(string name, IEnumerable<FieldMapper> pairs)
         {
+            if (pairs == null)
+                return name;
             var fp = pairs.FirstOrDefault(cc => cc.FldFrom == name);
             return fp == null ? name : fp.FldTo;
+        }
+
+        private static bool IsDelete(string name, IEnumerable<string> deletes)
+        {
+            if (deletes == null)
+                return false;
+            return deletes.Contains(name);
         }
 
         /// <summary>
@@ -67,10 +76,11 @@ namespace WebApiBase
         /// Parse the Odata-OrderBy part of the query
         /// See the call in the MapToOdataUri-function for usage
         /// </summary>
-        /// <param name="cc"></param>
-        /// <param name="pairs"></param>
+        /// <param name="cc">object node to parse</param>
+        /// <param name="pairs">List of replacement column names</param>
+        /// <param name="deleteList">List of column names to omit from the output</param>
         /// <returns></returns>
-        public static string ParseOdataOrderByToString(OrderByClause cc, List<FieldMapper> pairs)
+        public static string ParseOdataOrderByToString(OrderByClause cc, List<FieldMapper> pairs = null, List<string> deleteList = null)
         {
             var ret = "";
             var descStr = "";
@@ -80,37 +90,72 @@ namespace WebApiBase
             if (expr != null)
             {
                 var colName = expr.Property.Name;
-                var fldName = ReplaceName(colName, pairs);
+                if (!IsDelete(colName, deleteList))
+                {
+                    ret = ReplaceName(colName, pairs) + descStr;
+                }
                 if (cc.ThenBy != null)
-                    ret = fldName + descStr + "," + ParseOdataOrderByToString(cc.ThenBy, pairs);
-                else
-                    ret = fldName + descStr;
+                {
+                    var subRet = ParseOdataOrderByToString(cc.ThenBy, pairs, deleteList);
+                    if (!string.IsNullOrWhiteSpace(subRet))
+                        ret += "," + subRet;
+                }
             }
             return ret;
         }
 
+        public static string ParseOdataFilterToString(Object cc, List<FieldMapper> pairs, List<string> deleteList)
+        {
+            var tmp = "";
+            var ret = FilterRecurse(cc, pairs, deleteList, ref tmp);
+            return string.IsNullOrWhiteSpace(tmp) ? ret : ""; //Only if this note is not to be deleted
+        }
+
         /// <summary>
-        /// Parse the filter part of OdataQueryOptions
-        /// See the call in the MapToOdataUri-function for usage
+        /// 
         /// </summary>
         /// <param name="cc"></param>
         /// <param name="pairs"></param>
+        /// <param name="deleteList"></param>
+        /// <param name="deletedName">determines if current node contains deleted name and should be skipped from the output</param>
         /// <returns></returns>
-        public static string ParseOdataFilterToString(Object cc, List<FieldMapper> pairs)
+        private static string FilterRecurse(Object cc, List<FieldMapper> pairs, List<string> deleteList, ref string deletedName)
         {
             var ret = "";
             var expr = cc as BinaryOperatorNode;
             if (expr != null)
             {
-                var andOr = expr.OperatorKind == BinaryOperatorKind.And || expr.OperatorKind == BinaryOperatorKind.Or;
-                if (expr.Left != null)
+                if (string.IsNullOrWhiteSpace(deletedName))
                 {
-                    ret += (andOr ? "(" : "") + ParseOdataFilterToString(expr.Left, pairs) + (andOr ? ")" : "");
-                }
-                ret += " " + BinOpKindToStr(expr.OperatorKind) + " ";
-                if (expr.Right != null)
-                {
-                    ret += (andOr ? "(" : "") + ParseOdataFilterToString(expr.Right, pairs) + (andOr ? ")" : "");
+                    var andOr = expr.OperatorKind == BinaryOperatorKind.And || expr.OperatorKind == BinaryOperatorKind.Or;
+                    var leftStr = "";
+                    var rightStr = "";
+                    if (expr.Left != null)
+                    {
+                        var nowStr = FilterRecurse(expr.Left, pairs, deleteList, ref deletedName);
+                        if (!string.IsNullOrWhiteSpace(deletedName))
+                        {
+                            if (andOr)
+                                deletedName = ""; //We can now continue with parsing other nodes 
+                        }
+                        else if (!string.IsNullOrWhiteSpace(nowStr))
+                            leftStr = (andOr ? "(" : "") + nowStr + (andOr ? ")" : "");
+                    }
+                    if (expr.Right != null && string.IsNullOrWhiteSpace(deletedName))
+                    {
+                        var nowStr = FilterRecurse(expr.Right, pairs, deleteList, ref deletedName);
+                        if (!string.IsNullOrWhiteSpace(deletedName))
+                        {
+                            if (andOr)
+                                deletedName = ""; //We can now continue with parsing other nodes 
+                        }
+                        else if (!string.IsNullOrWhiteSpace(nowStr))
+                            rightStr = (andOr ? "(" : "") + nowStr + (andOr ? ")" : "");
+                    }
+                    if (!string.IsNullOrWhiteSpace(leftStr) && !string.IsNullOrWhiteSpace(rightStr))
+                        ret += leftStr + " " + BinOpKindToStr(expr.OperatorKind) + " " + rightStr;
+                    else
+                        ret += leftStr + rightStr;
                 }
             }
             else
@@ -118,27 +163,36 @@ namespace WebApiBase
                 var op = cc as ConvertNode;
                 if (op != null)
                 {
-                    if (op.Source != null)
-                        ret += "(" + ParseOdataFilterToString(op.Source, pairs) + ")";
-
+                    if (op.Source != null && string.IsNullOrWhiteSpace(deletedName))
+                    {
+                        var nowStr = FilterRecurse(op.Source, pairs, deleteList, ref deletedName);
+                        if (string.IsNullOrWhiteSpace(deletedName) && !string.IsNullOrWhiteSpace(nowStr))
+                            ret += "(" + nowStr + ")";
+                    }
                 }
                 else
                 {
                     var fCall = cc as SingleValueFunctionCallNode;
                     if (fCall != null)
                     {
-                        ret += fCall.Name + "(";
-                        if (fCall.Arguments != null && fCall.Arguments.Any())
+                        if (string.IsNullOrWhiteSpace(deletedName))
                         {
-                            var cntv = 0;
-                            foreach (var vno in fCall.Arguments)
+                            var retNow = fCall.Name + "(";
+                            if (fCall.Arguments != null && fCall.Arguments.Any())
                             {
-                                if (cntv > 0)
-                                    ret += ",";
-                                cntv++;
-                                ret += ParseOdataFilterToString(vno, pairs);
+                                var cntv = 0;
+                                foreach (var vno in fCall.Arguments)
+                                {
+                                    if (cntv > 0)
+                                        retNow += ",";
+                                    cntv++;
+                                    if (string.IsNullOrWhiteSpace(deletedName))
+                                        retNow += FilterRecurse(vno, pairs, deleteList, ref deletedName);
+                                }
+                                retNow += ")";
                             }
-                            ret += ")";
+                            if (string.IsNullOrWhiteSpace(deletedName))
+                                ret += retNow;
                         }
                     }
                     else
@@ -146,14 +200,18 @@ namespace WebApiBase
                         var cVal = cc as ConstantNode;
                         if (cVal != null)
                         {
-                            ret += cVal.LiteralText;
+                            if (string.IsNullOrWhiteSpace(deletedName))
+                                ret += cVal.LiteralText;
                         }
                         else
                         {
                             var spName = cc as SingleValuePropertyAccessNode;
                             if (spName != null)
                             {
-                                ret += ReplaceName(spName.Property.Name, pairs);
+                                if (IsDelete(spName.Property.Name, deleteList))
+                                    deletedName = spName.Property.Name; //Report that this section is not to be used
+                                else
+                                    ret += ReplaceName(spName.Property.Name, pairs);
                             }
                             else
                             {
@@ -208,17 +266,26 @@ namespace WebApiBase
         /// </summary>
         /// <param name="options">The ODataQueryOptions for any entytymodel entity.</param>
         /// <param name="pairs">List of from-to column names to replace</param>
+        /// <param name="deleteList">List of column names we want to delete from the query</param>
         /// <param name="allowSkip"></param>
         /// <param name="allowTop"></param>
         /// <param name="allowCount"></param>
         /// <returns></returns>
-        public static string MapToOdataUri(ODataQueryOptions<T> options, List<FieldMapper> pairs, bool allowSkip = true, bool allowTop = true, bool allowCount = true)
+        public static string MapToOdataUri(ODataQueryOptions<T> options, List<FieldMapper> pairs = null, List<string> deleteList = null, bool allowSkip = true, bool allowTop = true, bool allowCount = true)
         {
             var ret = "?";
             if (options.Filter != null && options.Filter.FilterClause.Expression != null)
-                ret += "$filter=" + ParseOdataFilterToString(options.Filter.FilterClause.Expression, pairs) + "&";
+            {
+                var filt = ParseOdataFilterToString(options.Filter.FilterClause.Expression, pairs, deleteList);
+                if (!string.IsNullOrWhiteSpace(filt))
+                    ret += "$filter=" + filt + "&";
+            }
             if (options.OrderBy != null && options.OrderBy.OrderByClause.Expression != null)
-                ret += "$orderby=" + ParseOdataOrderByToString(options.OrderBy.OrderByClause, pairs) + "&";
+            {
+                var ord = ParseOdataOrderByToString(options.OrderBy.OrderByClause, pairs, deleteList);
+                if (!string.IsNullOrWhiteSpace(ord))
+                    ret += "$orderby=" + ord + "&";
+            }
             if (allowSkip && options.Skip != null)
                 ret += "$skip=" + Convert.ToString(options.Skip.Value) + "&";
             if (allowTop && options.Top != null)
