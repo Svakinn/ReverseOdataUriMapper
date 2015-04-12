@@ -53,7 +53,7 @@ namespace Example.Controllers
 
 
         [HttpGet]
-        public IOdataQueryResult<CustomerIntView> CustomersView(ODataQueryOptions<fb.CustomerIntView> options)
+        public IOdataQueryResult<CustomerIntView> CustomersView(ODataQueryOptions<CustomerIntView> options)
         {
             //Here we call the mapper to get new mapped url
             //***********HERE IS THE CALLING EXAMPLE TO THE REVERSE URI MAPPER !!!
@@ -77,7 +77,7 @@ namespace Example.Controllers
 
             foreach (var cc in servRet.value)
             {
-                var cIntv = new fb.CustomerIntView();
+                var cIntv = new CustomerIntView();
                 cIntv.Name = cc.Name;
                 cIntv.CustCode = cc.No;
                 cIntv.ContactName = cc.Contact;
@@ -95,8 +95,8 @@ namespace Example.Controllers
     }
 
     /// <summary>
-    /// This is the return type that fits the Json response signature for the Nav service we call
-    /// The only purpose of this class is to help with deserialization of the Customers payload from Nav
+    /// This is the return type that fits the Json response signature for the external odata service we call
+    /// The only purpose of this class is to help with deserialization of the Customers payload from the service
     /// </summary>
     public class MyExtCustIntRet
     {
