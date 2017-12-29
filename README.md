@@ -32,6 +32,10 @@ Usage:
 3. Get the new mapped url  
 
 		var parsedUrl = ReverseOdataUriMapper<CustomerIntView>.MapToOdataUri(options, pairs, skips, true, true, false);
+		
+4. Create new ODataQueryOptions from the url (in case you want to typecast or inject something into the url)
+
+		var newOpt = ReverseOdataUriMapper<CustomerIntView>.BuildOptions(parsedUrl);
 
 Se example usage here:  
 [ExampleController.cs](/src/ExampleController.cs)
