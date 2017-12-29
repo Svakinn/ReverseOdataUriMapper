@@ -294,6 +294,30 @@ namespace WebApiBase
                 ret += "$inlinecount=" + options.InlineCount.RawValue + "&";
             return ret;
         }
+        
+        //In case you want to typecast or inject into current ODataQueryOptions,
+        //you can use this method to build new one from the odata query string
+        public static ODataQueryOptions<T> BuildOptions(string oDataUri)
+        {
+            var baseUri = "";
+            var odUri = "";
+            var spl = oDataUri.Split('?');
+            if (spl.Count() == 0)
+                odUri = spl[0];
+            else
+            {
+                baseUri = spl[0];
+                odUri = spl[1];
+            }
+            if (string.IsNullOrEmpty(baseUri))
+                baseUri = "http://localhost/api/" + typeof(T).Name;
+            var request = new HttpRequestMessage(HttpMethod.Get, baseUri+ "?"+ oDataUri.Replace("?",""));
+            var modelBuilder = new ODataConventionModelBuilder();
+            modelBuilder.AddEntity(typeof(T));
+            var edmModel = modelBuilder.GetEdmModel();
+            var oDataQueryContext = new ODataQueryContext(edmModel, typeof(T));
+            return new ODataQueryOptions<T>(oDataQueryContext, request);
+        }
     }
 }
 
